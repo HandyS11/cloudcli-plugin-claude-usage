@@ -3,7 +3,7 @@
   "displayName": "Claude Usage",
   "version": "1.0.0",
   "description": "Live Claude Code plan-limit gauges and 30-day token/cost history.",
-  "author": "Valentin Clergue",
+  "author": "HandyS11",
   "icon": "icon.svg",
   "type": "module",
   "slot": "tab",
