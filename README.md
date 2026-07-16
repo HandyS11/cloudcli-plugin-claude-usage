@@ -1,7 +1,7 @@
 <div align="center">
   <img src="https://raw.githubusercontent.com/siteboon/claudecodeui/main/public/logo.svg" alt="CloudCLI" width="64" height="64">
-  <h1>CloudCLI Plugin Starter — Project Stats</h1>
-  <p>A starter plugin for <a href="https://cloudcli.ai">CloudCLI Cloud</a> and <a href="https://github.com/siteboon/claudecodeui">CloudCLI UI</a></p>
+  <h1>Claude Usage</h1>
+  <p>A Claude Code usage plugin for <a href="https://cloudcli.ai">CloudCLI Cloud</a> and <a href="https://github.com/siteboon/claudecodeui">CloudCLI UI</a></p>
 </div>
 
 <p align="center">
