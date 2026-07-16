@@ -15,6 +15,8 @@
 
 ---
 
+![Claude Usage plugin running in a CloudCLI tab: plan-limit gauges, 30-day token chart, and per-model/per-project cost breakdowns](banner.png)
+
 # Claude Usage — CloudCLI Plugin
 
 Shows the current usage of Claude Code in a CloudCLI tab:
@@ -32,7 +34,7 @@ Open **Settings > Plugins** in CloudCLI UI, paste this repository's URL, and
 click **Install**. Or manually:
 
 ```bash
-git clone <this-repo-url> ~/.claude-code-ui/plugins/claude-usage
+git clone https://github.com/HandyS11/cloudcli-plugin-claude-usage.git ~/.claude-code-ui/plugins/claude-usage
 cd ~/.claude-code-ui/plugins/claude-usage
 npm install && npm run build
 ```
