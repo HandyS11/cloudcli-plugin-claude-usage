@@ -13,7 +13,7 @@ type Price = [number, number, number, number];
 // cache read = 0.1x input, per Anthropic pricing.
 const PRICES: [RegExp, Price][] = [
   [/fable|mythos/, [10, 50, 12.5, 1]],
-  [/opus-4-[01]\b/, [15, 75, 18.75, 1.5]],
+  [/opus-4-[01]\b|3-opus/, [15, 75, 18.75, 1.5]],
   [/opus/, [5, 25, 6.25, 0.5]],
   [/sonnet/, [3, 15, 3.75, 0.3]],
   [/haiku-4/, [1, 5, 1.25, 0.1]],

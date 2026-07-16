@@ -37,3 +37,10 @@ test('legacy opus 4.1 uses old pricing', () => {
   });
   assert.equal(cost, 15);
 });
+
+test('claude 3 opus uses legacy pricing', () => {
+  const cost = estimateCost('claude-3-opus-20240229', {
+    input: 1 * M, output: 0, cacheCreate: 0, cacheRead: 0,
+  });
+  assert.equal(cost, 15);
+});
