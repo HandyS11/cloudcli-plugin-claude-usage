@@ -85,3 +85,25 @@ test('aggregate reports null cost for unknown models but counts tokens', () => {
   assert.equal(agg.byModel[0].cost, null);
   assert.equal(agg.totals.tokens.output, 10);
 });
+
+test('aggregate window aligns with daily calendar buckets', () => {
+  const agg = aggregate(
+    [{
+      project: 'p',
+      entries: [
+        entry('w1', '2026-06-16T15:00:00Z'), // day before daily[0] — must be fully excluded
+        entry('w2', '2026-06-17T00:30:00Z'), // first covered day — included
+        entry('w3', '2026-07-16T23:00:00Z'), // later today (after nowMs, same UTC day) — included
+        entry('w4', '2026-07-17T01:00:00Z'), // tomorrow — fully excluded
+      ],
+    }],
+    30, NOW,
+  );
+  assert.equal(agg.totals.messages, 2);
+  assert.equal(agg.daily[0].date, '2026-06-17');
+  assert.equal(agg.daily[0].tokens.output, 10);
+  assert.equal(agg.daily[agg.daily.length - 1].tokens.output, 10);
+  // invariant: totals equals the sum of the daily series
+  const dailySum = agg.daily.reduce((s, d) => s + d.tokens.output, 0);
+  assert.equal(dailySum, agg.totals.tokens.output);
+});

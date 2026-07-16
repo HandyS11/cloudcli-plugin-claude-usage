@@ -67,18 +67,21 @@ function totalOf(t: TokenCounts): number {
 }
 
 export function aggregate(sessions: SessionEntries[], days: number, nowMs: number): HistoryAggregate {
-  const cutoff = nowMs - days * 86_400_000;
+  const DAY_MS = 86_400_000;
+  const todayStartMs = Math.floor(nowMs / DAY_MS) * DAY_MS; // UTC day start
+  const windowStartMs = todayStartMs - (days - 1) * DAY_MS;
+  const windowEndMs = todayStartMs + DAY_MS; // exclusive
   const seen = new Set<string>();
   const byDay = new Map<string, { tokens: TokenCounts; cost: number }>();
-  const byModel = new Map<string, { tokens: TokenCounts; cost: number | null; priced: boolean }>();
-  const byProject = new Map<string, { tokens: TokenCounts; cost: number | null; priced: boolean }>();
+  const byModel = new Map<string, { tokens: TokenCounts; cost: number | null }>();
+  const byProject = new Map<string, { tokens: TokenCounts; cost: number | null }>();
   const totals = { tokens: zero(), cost: 0, sessions: 0, messages: 0 };
 
   for (const session of sessions) {
     let sessionActive = false;
     for (const e of session.entries) {
       const ts = Date.parse(e.timestamp);
-      if (!Number.isFinite(ts) || ts < cutoff || ts > nowMs + 86_400_000) continue;
+      if (!Number.isFinite(ts) || ts < windowStartMs || ts >= windowEndMs) continue;
       if (seen.has(e.id)) continue;
       seen.add(e.id);
       sessionActive = true;
@@ -98,11 +101,10 @@ export function aggregate(sessions: SessionEntries[], days: number, nowMs: numbe
         [byModel, e.model],
         [byProject, session.project],
       ] as const) {
-        const b = map.get(key) ?? { tokens: zero(), cost: null, priced: false };
+        const b = map.get(key) ?? { tokens: zero(), cost: null };
         add(b.tokens, e.tokens);
         if (cost !== null) {
           b.cost = (b.cost ?? 0) + cost;
-          b.priced = true;
         }
         map.set(key, b);
       }
