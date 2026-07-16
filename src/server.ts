@@ -1,135 +1,117 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import { parseCredentials, normalizeUsage, LiveData } from './live.js';
+import { parseTranscriptLine, projectLabel, aggregate, SessionEntries, UsageEntry } from './history.js';
 
-// ── Types ──────────────────────────────────────────────────────────────
+const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
+const LIVE_CACHE_MS = 30_000;
 
-interface FileInfo {
-  full: string;
-  rel: string;
-  ext: string;
-  size: number;
-  mtime: number;
+// ── /live ──────────────────────────────────────────────────────────────
+
+let liveCache: { at: number; data: LiveData } | null = null;
+
+async function getLive(): Promise<LiveData> {
+  if (liveCache && Date.now() - liveCache.at < LIVE_CACHE_MS) return liveCache.data;
+
+  let credsJson: unknown;
+  try {
+    credsJson = JSON.parse(fs.readFileSync(path.join(CLAUDE_DIR, '.credentials.json'), 'utf-8'));
+  } catch {
+    throw Object.assign(new Error('No Claude Code credentials found — sign in with the claude CLI first.'), { status: 404 });
+  }
+  const creds = parseCredentials(credsJson, Date.now());
+  if (!creds) throw Object.assign(new Error('Unrecognized credentials file format.'), { status: 500 });
+  if (creds.expired) {
+    throw Object.assign(new Error('OAuth token expired — run claude to refresh it, then retry.'), { status: 401 });
+  }
+
+  const res = await fetch(USAGE_URL, {
+    headers: {
+      Authorization: `Bearer ${creds.accessToken}`,
+      'anthropic-beta': 'oauth-2025-04-20',
+      'Content-Type': 'application/json',
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) {
+    throw Object.assign(new Error(`Usage endpoint returned HTTP ${res.status}.`), { status: 502 });
+  }
+  const data = normalizeUsage(await res.json(), creds.plan, creds.tier);
+  liveCache = { at: Date.now(), data };
+  return data;
 }
 
-interface ProjectStats {
-  totalFiles: number;
-  totalLines: number;
-  totalSize: number;
-  byExtension: [string, number][];
-  largest: { name: string; size: number }[];
-  recent: { name: string; mtime: number }[];
+// ── /history ───────────────────────────────────────────────────────────
+
+// Per-file parse cache keyed by mtime, so repeated polls only re-read changed files.
+const fileCache = new Map<string, { mtimeMs: number; entries: UsageEntry[] }>();
+
+function readSessionFile(file: string): UsageEntry[] {
+  const mtimeMs = fs.statSync(file).mtimeMs;
+  const cached = fileCache.get(file);
+  if (cached && cached.mtimeMs === mtimeMs) return cached.entries;
+  const entries: UsageEntry[] = [];
+  for (const line of fs.readFileSync(file, 'utf-8').split('\n')) {
+    const e = parseTranscriptLine(line);
+    if (e) entries.push(e);
+  }
+  fileCache.set(file, { mtimeMs, entries });
+  return entries;
 }
 
-// ── Constants ──────────────────────────────────────────────────────────
-
-const TEXT_EXTS = new Set([
-  '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.vue', '.svelte', '.astro',
-  '.css', '.scss', '.sass', '.less',
-  '.html', '.htm', '.xml', '.svg',
-  '.json', '.yaml', '.yml', '.toml', '.ini',
-  '.md', '.mdx', '.txt', '.rst',
-  '.py', '.rb', '.go', '.rs', '.java', '.c', '.cpp', '.h', '.hpp', '.cs',
-  '.sh', '.bash', '.zsh', '.fish',
-  '.sql', '.graphql', '.gql',
-]);
-
-const SKIP_DIRS = new Set([
-  'node_modules', '.git', 'dist', 'build', '.next', '.nuxt',
-  'coverage', '.cache', '__pycache__', '.venv', 'venv',
-  'target', 'vendor', '.turbo', 'out', '.output', 'tmp',
-]);
-
-// ── Filesystem helpers ─────────────────────────────────────────────────
-
-function scan(dir: string, max = 5000): FileInfo[] {
-  const files: FileInfo[] = [];
-  (function walk(d: string, depth: number): void {
-    if (depth > 6 || files.length >= max) return;
-    let entries: fs.Dirent[];
+function getHistory(days: number) {
+  const projectsDir = path.join(CLAUDE_DIR, 'projects');
+  const sessions: SessionEntries[] = [];
+  let dirs: fs.Dirent[] = [];
+  try {
+    dirs = fs.readdirSync(projectsDir, { withFileTypes: true });
+  } catch {
+    // no transcripts at all — aggregate over nothing, frontend shows empty state
+  }
+  for (const dir of dirs) {
+    if (!dir.isDirectory()) continue;
+    const project = projectLabel(dir.name);
+    let files: string[] = [];
     try {
-      entries = fs.readdirSync(d, { withFileTypes: true });
+      files = fs.readdirSync(path.join(projectsDir, dir.name)).filter((f) => f.endsWith('.jsonl'));
     } catch {
-      return;
+      continue;
     }
-    for (const e of entries) {
-      if (files.length >= max) break;
-      if (e.name.startsWith('.') && e.name !== '.env') continue;
-      const full = path.join(d, e.name);
-      if (e.isDirectory()) {
-        if (!SKIP_DIRS.has(e.name)) walk(full, depth + 1);
-      } else if (e.isFile()) {
-        try {
-          const stat = fs.statSync(full);
-          files.push({
-            full,
-            rel: path.relative(dir, full),
-            ext: path.extname(e.name).toLowerCase() || '(none)',
-            size: stat.size,
-            mtime: stat.mtimeMs,
-          });
-        } catch {
-          /* skip unreadable */
-        }
+    for (const f of files) {
+      try {
+        sessions.push({ project, entries: readSessionFile(path.join(projectsDir, dir.name, f)) });
+      } catch {
+        /* unreadable file — skip */
       }
     }
-  })(dir, 0);
-  return files;
-}
-
-function countLines(full: string, size: number): number {
-  if (size > 256 * 1024) return 0; // skip large files
-  try {
-    return (fs.readFileSync(full, 'utf-8').match(/\n/g) || []).length + 1;
-  } catch {
-    return 0;
   }
+  return aggregate(sessions, days, Date.now());
 }
 
-function getStats(projectPath: string): ProjectStats {
-  if (!projectPath || !path.isAbsolute(projectPath)) throw new Error('Invalid path');
-  if (!fs.existsSync(projectPath)) throw new Error('Path does not exist');
+// ── HTTP wiring ────────────────────────────────────────────────────────
 
-  const files = scan(projectPath);
-  const byExt: Record<string, number> = {};
-  let totalLines = 0;
-  let totalSize = 0;
-
-  for (const f of files) {
-    byExt[f.ext] = (byExt[f.ext] || 0) + 1;
-    totalSize += f.size;
-    if (TEXT_EXTS.has(f.ext)) totalLines += countLines(f.full, f.size);
-  }
-
-  return {
-    totalFiles: files.length,
-    totalLines,
-    totalSize,
-    byExtension: Object.entries(byExt).sort((a, b) => b[1] - a[1]).slice(0, 12),
-    largest: [...files].sort((a, b) => b.size - a.size).slice(0, 6).map((f) => ({ name: f.rel, size: f.size })),
-    recent: [...files].sort((a, b) => b.mtime - a.mtime).slice(0, 6).map((f) => ({ name: f.rel, mtime: f.mtime })),
-  };
-}
-
-// ── HTTP server ────────────────────────────────────────────────────────
-
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
-
-  if (req.method === 'GET' && req.url?.startsWith('/stats')) {
-    try {
-      const { searchParams } = new URL(req.url, 'http://localhost');
-      const stats = getStats(searchParams.get('path') ?? '');
-      res.end(JSON.stringify(stats));
-    } catch (err) {
-      res.writeHead(400);
-      res.end(JSON.stringify({ error: (err as Error).message }));
+  try {
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    if (req.method === 'GET' && url.pathname === '/live') {
+      res.end(JSON.stringify(await getLive()));
+      return;
     }
-    return;
+    if (req.method === 'GET' && url.pathname === '/history') {
+      const days = Math.min(Math.max(Number(url.searchParams.get('days')) || 30, 1), 365);
+      res.end(JSON.stringify(getHistory(days)));
+      return;
+    }
+    res.writeHead(404);
+    res.end(JSON.stringify({ error: 'Not found' }));
+  } catch (err: any) {
+    res.writeHead(typeof err?.status === 'number' ? err.status : 500);
+    res.end(JSON.stringify({ error: err?.message ?? 'Internal error' }));
   }
-
-  res.writeHead(404);
-  res.end(JSON.stringify({ error: 'Not found' }));
 });
 
 server.listen(0, '127.0.0.1', () => {
