@@ -1,11 +1,12 @@
 {
-  "name": "cloudcli-plugin-starter",
+  "name": "cloudcli-plugin-claude-usage",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "tsc && node --test dist/"
   },
   "devDependencies": {
     "typescript": "^5.5.0",
