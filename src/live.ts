@@ -45,7 +45,8 @@ export function normalizeUsage(raw: unknown, plan: string | null, tier: string |
   if (Array.isArray(rawLimits)) {
     for (const l of rawLimits) {
       if (typeof l?.kind !== 'string' || typeof l?.percent !== 'number') continue;
-      const model: string | null = l.scope?.model?.display_name ?? null;
+      const rawModel = l.scope?.model?.display_name;
+      const model: string | null = typeof rawModel === 'string' && rawModel !== '' ? rawModel : null;
       const base = KIND_LABELS[l.kind] ?? l.kind;
       limits.push({
         kind: l.kind,

@@ -45,3 +45,21 @@ test('normalizeUsage maps known limits and skips malformed ones', () => {
 test('normalizeUsage tolerates missing limits array', () => {
   assert.deepEqual(normalizeUsage({}, null, null).limits, []);
 });
+
+test('normalizeUsage passes unknown kinds through with kind as label', () => {
+  const live = normalizeUsage({ limits: [{ kind: 'monthly_new', percent: 5, severity: 'normal', resets_at: null }] }, null, null);
+  assert.equal(live.limits.length, 1);
+  assert.equal(live.limits[0].label, 'monthly_new');
+  assert.equal(live.limits[0].severity, 'normal');
+});
+
+test('normalizeUsage rejects non-string or empty model display_name', () => {
+  const live = normalizeUsage({ limits: [
+    { kind: 'weekly_scoped', percent: 1, severity: 'normal', resets_at: null, scope: { model: { display_name: { nested: true } } } },
+    { kind: 'weekly_scoped', percent: 2, severity: 'normal', resets_at: null, scope: { model: { display_name: '' } } },
+  ] }, null, null);
+  assert.equal(live.limits[0].model, null);
+  assert.equal(live.limits[0].label, 'Weekly');
+  assert.equal(live.limits[1].model, null);
+  assert.equal(live.limits[1].label, 'Weekly');
+});
