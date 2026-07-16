@@ -30,6 +30,18 @@ test('parseTranscriptLine ignores non-usage and invalid lines', () => {
   assert.equal(parseTranscriptLine(synth), null);
 });
 
+test('parseTranscriptLine normalizes non-numeric token fields to 0', () => {
+  const line = JSON.stringify({
+    timestamp: '2026-07-12T00:00:00Z',
+    message: {
+      id: 'msg_bad', model: 'claude-opus-4-8',
+      usage: { input_tokens: '12', cache_creation_input_tokens: null, cache_read_input_tokens: NaN, output_tokens: 7 },
+    },
+  });
+  const e = parseTranscriptLine(line);
+  assert.deepEqual(e?.tokens, { input: 0, output: 7, cacheCreate: 0, cacheRead: 0 });
+});
+
 test('projectLabel prettifies claude project dir names', () => {
   assert.equal(projectLabel('-home-cloudcli-projects-DotnetTokenKiller'), 'DotnetTokenKiller');
   assert.equal(projectLabel('-home-cloudcli'), 'home-cloudcli');

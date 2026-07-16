@@ -30,8 +30,8 @@ function themeColors(dark: boolean): ThemeColors {
 }
 
 function sevColor(c: ThemeColors, severity: string, percent: number): string {
-  if (severity !== 'normal' || percent >= 90) return c.bad;
-  if (percent >= 70) return c.warn;
+  if (percent >= 90 || (severity !== 'normal' && severity !== 'warning')) return c.bad;
+  if (percent >= 70 || severity === 'warning') return c.warn;
   return c.ok;
 }
 

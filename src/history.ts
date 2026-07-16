@@ -19,6 +19,10 @@ export interface HistoryAggregate {
   totals: { tokens: TokenCounts; cost: number; sessions: number; messages: number };
 }
 
+function num(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+}
+
 /** Parse one transcript JSONL line; null when it carries no billable usage. */
 export function parseTranscriptLine(line: string): UsageEntry | null {
   if (!line.includes('"usage"')) return null; // fast path
@@ -37,10 +41,10 @@ export function parseTranscriptLine(line: string): UsageEntry | null {
     timestamp: obj.timestamp,
     model: msg.model,
     tokens: {
-      input: usage.input_tokens ?? 0,
-      output: usage.output_tokens ?? 0,
-      cacheCreate: usage.cache_creation_input_tokens ?? 0,
-      cacheRead: usage.cache_read_input_tokens ?? 0,
+      input: num(usage.input_tokens),
+      output: num(usage.output_tokens),
+      cacheCreate: num(usage.cache_creation_input_tokens),
+      cacheRead: num(usage.cache_read_input_tokens),
     },
   };
 }
