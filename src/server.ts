@@ -95,8 +95,8 @@ function getHistory(days: number) {
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
-  const url = new URL(req.url ?? '/', 'http://localhost');
   try {
+    const url = new URL(req.url ?? '/', 'http://localhost');
     if (req.method === 'GET' && url.pathname === '/live') {
       res.end(JSON.stringify(await getLive()));
       return;
