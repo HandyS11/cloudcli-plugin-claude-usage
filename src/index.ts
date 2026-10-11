@@ -34,7 +34,6 @@ const TICK_MS = 60_000;
 
 const SANS = "Geist, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif";
 const MONO = "'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
-const SERIF = "'Source Serif 4', ui-serif, Georgia, serif";
 
 /** Corner radius derived from the host's --radius. */
 function radius(minusPx = 0): string {
@@ -43,14 +42,14 @@ function radius(minusPx = 0): string {
 
 const FALLBACKS = {
   light: {
-    background: '60 14% 99%', foreground: '60 3% 8%', card: '0 0% 100%',
-    primary: '15 58% 43%', muted: '60 3% 94%', accent: '48 12% 92%', 'muted-foreground': '50 3% 41%',
-    border: '60 2% 88%', input: '60 2% 87%', ring: '15 56% 52%', destructive: '4 59% 44%',
+    background: '60 14.3% 98.6%', foreground: '60 2.6% 7.6%', card: '0 0% 100%',
+    primary: '15.5 58.2% 43.1%', muted: '60 3.2% 93.9%', accent: '48 12.2% 92%', 'muted-foreground': '50 2.9% 40.8%',
+    border: '60 1.7% 88.4%', input: '60 1.5% 87.3%', ring: '15.1 55.6% 52.4%', destructive: '4.1 59.1% 44.1%',
   },
   dark: {
-    background: '0 0% 8%', foreground: '45 12% 93%', card: '60 2% 12%',
-    primary: '15 65% 63%', muted: '0 0% 13%', accent: '0 1% 17%', 'muted-foreground': '45 4% 56%',
-    border: '30 2% 18%', input: '30 2% 21%', ring: '15 65% 63%', destructive: '10 72% 67%',
+    background: '0 0% 8.2%', foreground: '45 11.8% 93.3%', card: '60 1.6% 12.4%',
+    primary: '15.2 64.9% 63.1%', muted: '0 0% 12.9%', accent: '0 1.2% 16.7%', 'muted-foreground': '45 3.6% 56.1%',
+    border: '0 1.2% 15.9%', input: '30 1.9% 21.2%', ring: '15.2 64.9% 63.1%', destructive: '9.9 72.5% 67.3%',
   },
 } as const;
 
@@ -138,10 +137,13 @@ function errorNote(c: ThemeColors, msg: string): string {
   return `<div style="font-size:0.8rem;color:${c.warn}">⚠ ${esc(msg)}</div>`;
 }
 
+function planBadge(c: ThemeColors, live: LiveData | null): string {
+  if (!live?.plan) return '';
+  const tier = live.tier ? ` · ${esc(live.tier.replace(/^default_claude_/, ''))}` : '';
+  return `<span style="flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:600;line-height:1.4;border:1px solid ${c.border};border-radius:${radius(2)};padding:1px 8px;color:${c.muted}">${esc(live.plan)}${tier}</span>`;
+}
+
 function renderLive(c: ThemeColors, live: LiveData | null, error: string | null): string {
-  const badge = live?.plan
-    ? `<span style="font-family:${MONO};font-size:0.65rem;font-weight:400;letter-spacing:0;text-transform:none;border:1px solid ${c.border};border-radius:${radius(4)};padding:2px 8px;color:${c.muted}">${esc(live.plan)}${live.tier ? ` · ${esc(live.tier.replace(/^default_claude_/, ''))}` : ''}</span>`
-    : '';
   const updated = live
     ? `<span style="font-family:${MONO};font-size:0.65rem;font-weight:400;letter-spacing:0;text-transform:none;color:${c.muted};margin-left:8px">updated ${ago(Date.now() - live.fetchedAt)}</span>`
     : '';
@@ -161,8 +163,8 @@ function renderLive(c: ThemeColors, live: LiveData | null, error: string | null)
       const color = sevColor(c, l.severity, l.percent);
       const pct = Math.max(0, Math.min(100, l.percent));
       return `
-        <div style="margin-bottom:14px">
-          <div style="display:flex;justify-content:space-between;gap:8px;font-size:0.8rem;margin-bottom:6px">
+        <div class="cu-gauge">
+          <div style="display:flex;flex-wrap:wrap;justify-content:space-between;column-gap:8px;row-gap:2px;font-size:0.8rem;margin-bottom:6px">
             <span>${esc(l.label)}</span>
             <span style="font-family:${MONO};font-size:0.72rem;color:${c.muted}">${l.percent}% · ${resetsIn(l.resetsAt)}</span>
           </div>
@@ -172,7 +174,7 @@ function renderLive(c: ThemeColors, live: LiveData | null, error: string | null)
         </div>`;
     }).join('');
   }
-  return card(c, `plan limits ${badge}${updated}`, body);
+  return card(c, `plan limits ${updated}`, body);
 }
 
 function renderChart(c: ThemeColors, daily: HistoryData['daily']): string {
@@ -214,17 +216,17 @@ function renderHistory(c: ThemeColors, history: HistoryData | null, error: strin
     ['sessions', String(t.sessions)],
   ];
   const statCards = `
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+    <div class="cu-stats">
       ${stats.map(([label, val]) => `
         <div style="background:${c.surface};border:1px solid ${c.border};border-radius:${radius()};padding:14px">
-          <div style="font-family:${MONO};font-size:1.35rem;font-weight:600;letter-spacing:-0.03em">${val}</div>
+          <div class="cu-stat-value" style="font-family:${MONO};font-weight:600;letter-spacing:-0.03em">${val}</div>
           <div style="font-size:0.68rem;font-weight:500;color:${c.muted};margin-top:4px;letter-spacing:0.08em;text-transform:uppercase">${label}</div>
         </div>`).join('')}
     </div>`;
   return `
     ${statCards}
     ${card(c, 'daily tokens (30 days)', renderChart(c, history.daily))}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <div class="cu-split">
       ${card(c, 'by model', renderTable(c, history.byModel.map((m) => [m.model, m.tokens, m.cost])))}
       ${card(c, 'by project', renderTable(c, history.byProject.slice(0, 10).map((p) => [p.project, p.tokens, p.cost])))}
     </div>`;
@@ -239,39 +241,98 @@ interface State {
   historyError: string | null;
 }
 
+// Lucide-style glyphs drawn like the host's built-in tab headers.
+const GAUGE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20a8 8 0 1 1 8-8"/><path d="M12 12l4-4"/><path d="M12 20v.01"/><path d="M20 12h.01"/><path d="M4 12h.01"/><path d="M6.3 6.3l.01.01"/></svg>';
+const REFRESH_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>';
+
+// Layout and interaction states that inline styles can't express. Colours
+// come from --cu-* properties set inline so they follow the host theme.
+// Breakpoints are container queries: the panel is narrower than the screen
+// whenever the host sidebar is open.
+const STYLES = `
+  .cu-root { container-type: inline-size; }
+  .cu-body { padding: 20px 24px 24px; }
+  .cu-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .cu-stat-value { font-size: 1.35rem; }
+  .cu-gauge + .cu-gauge { margin-top: 14px; }
+  .cu-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 10px; }
+  .cu-refresh { transition: background 0.15s, color 0.15s; }
+  .cu-refresh:disabled { opacity: 0.5; cursor: default; }
+  .cu-refresh:focus-visible { outline: 1px solid var(--cu-ring); outline-offset: 0; }
+  .cu-spin { animation: cu-spin 1s linear infinite; }
+  @keyframes cu-spin { to { transform: rotate(360deg); } }
+  @media (hover: hover) {
+    .cu-refresh:not(:disabled):hover { background: var(--cu-hover-bg) !important; color: var(--cu-hover-fg) !important; }
+  }
+  @container (max-width: 720px) {
+    .cu-split { grid-template-columns: minmax(0, 1fr); }
+  }
+  @container (max-width: 560px) {
+    .cu-body { padding: 16px; }
+    .cu-header { padding-left: 16px !important; padding-right: 12px !important; }
+    .cu-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cu-stat-value { font-size: 1.2rem; }
+  }
+`;
+
+interface State {
+  live: LiveData | null;
+  liveError: string | null;
+  history: HistoryData | null;
+  historyError: string | null;
+  loading: boolean;
+}
+
 export function mount(container: HTMLElement, api: PluginAPI): void {
   const root = document.createElement('div');
+  root.className = 'cu-root';
   Object.assign(root.style, {
-    height: '100%', overflowY: 'auto', boxSizing: 'border-box',
-    padding: '24px', fontFamily: SANS,
+    height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', fontFamily: SANS,
   });
+  // The header stays put; only the body scrolls, and it is reused across
+  // renders so its scroll position survives the 60s refresh.
+  const header = document.createElement('div');
+  header.className = 'cu-header';
+  Object.assign(header.style, {
+    flexShrink: '0', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    gap: '12px', padding: '12px 16px',
+  });
+  const body = document.createElement('div');
+  body.className = 'cu-body';
+  Object.assign(body.style, { flex: '1', minHeight: '0', overflowY: 'auto', boxSizing: 'border-box' });
+  root.append(header, body);
   container.appendChild(root);
 
-  // Interaction states can't be expressed inline; colours come from --cu-*
-  // properties set on the element so they follow the host theme.
   const style = document.createElement('style');
-  style.textContent = `
-    .cu-refresh { transition: background 0.15s, color 0.15s; }
-    .cu-refresh:hover { background: var(--cu-hover-bg) !important; color: var(--cu-hover-fg) !important; }
-    .cu-refresh:focus-visible { outline: 2px solid var(--cu-ring); outline-offset: 2px; }
-  `;
+  style.textContent = STYLES;
   container.appendChild(style);
 
-  const state: State = { live: null, liveError: null, history: null, historyError: null };
+  const state: State = { live: null, liveError: null, history: null, historyError: null, loading: false };
 
   function render(ctx: PluginContext): void {
     const c = themeColors(ctx.theme === 'dark');
     root.style.background = c.bg;
     root.style.color = c.text;
-    root.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:20px">
-        <div style="font-family:${SERIF};font-size:1.5rem;font-weight:600;letter-spacing:-0.01em">Claude Usage</div>
-        <button id="cu-refresh" class="cu-refresh" style="--cu-ring:${c.ring};--cu-hover-bg:${c.hover};--cu-hover-fg:${c.text};padding:5px 12px;background:transparent;border:1px solid ${c.border};color:${c.muted};font-family:${SANS};font-size:0.75rem;border-radius:${radius(4)};cursor:pointer">↻ refresh</button>
+    header.style.borderBottom = `1px solid ${c.border}`;
+    header.innerHTML = `
+      <div style="min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0">
+          <span style="display:flex;flex-shrink:0;color:${c.accent}">${GAUGE_ICON}</span>
+          <h3 style="margin:0;flex-shrink:0;font-size:0.875rem;font-weight:600;line-height:1.25rem">Claude Usage</h3>
+          ${planBadge(c, state.live)}
+        </div>
+        <p style="margin:2px 0 0;font-size:0.75rem;line-height:1rem;color:${c.muted};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Plan limits and 30-day token history</p>
       </div>
+      <button id="cu-refresh" class="cu-refresh" type="button" title="Refresh" aria-label="Refresh"${state.loading ? ' disabled' : ''}
+        style="--cu-ring:${c.ring};--cu-hover-bg:${c.hover};--cu-hover-fg:${c.text};flex-shrink:0;display:flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;background:transparent;border:0;color:${c.text};border-radius:${radius(2)};cursor:pointer">
+        <span style="display:flex"${state.loading ? ' class="cu-spin"' : ''}>${REFRESH_ICON}</span>
+      </button>
+    `;
+    body.innerHTML = `
       ${renderLive(c, state.live, state.liveError)}
       ${renderHistory(c, state.history, state.historyError)}
     `;
-    root.querySelector('#cu-refresh')?.addEventListener('click', () => void load(true));
+    header.querySelector('#cu-refresh')?.addEventListener('click', () => void load(true));
   }
 
   async function loadLive(): Promise<void> {
@@ -295,8 +356,15 @@ export function mount(container: HTMLElement, api: PluginAPI): void {
   }
 
   async function load(refreshHistory: boolean): Promise<void> {
+    // Only full loads (first load, refresh button) show the spinner; the
+    // background poll updates quietly.
+    if (refreshHistory) {
+      state.loading = true;
+      render(api.context);
+    }
     // Sections load and fail independently.
     await Promise.all([loadLive(), refreshHistory || !state.history ? loadHistory() : Promise.resolve()]);
+    state.loading = false;
     render(api.context);
   }
 
