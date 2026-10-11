@@ -265,7 +265,7 @@ export function mount(container: HTMLElement, api: PluginAPI): void {
     root.style.color = c.text;
     root.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:20px">
-        <div style="font-family:${SERIF};font-size:1.5rem;font-weight:600;letter-spacing:-0.01em">Claude Usage<span style="color:${c.accent}">▌</span></div>
+        <div style="font-family:${SERIF};font-size:1.5rem;font-weight:600;letter-spacing:-0.01em">Claude Usage</div>
         <button id="cu-refresh" class="cu-refresh" style="--cu-ring:${c.ring};--cu-hover-bg:${c.hover};--cu-hover-fg:${c.text};padding:5px 12px;background:transparent;border:1px solid ${c.border};color:${c.muted};font-family:${SANS};font-size:0.75rem;border-radius:${radius(4)};cursor:pointer">↻ refresh</button>
       </div>
       ${renderLive(c, state.live, state.liveError)}
