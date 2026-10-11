@@ -27,16 +27,56 @@ interface HistoryData {
 const LIVE_POLL_MS = 5 * 60_000;
 const TICK_MS = 60_000;
 
-// ── Theme (matches starter conventions) ─────────────────────────────────
+// ── Theme (follows the CloudCLI host) ───────────────────────────────────
+// The plugin is mounted straight into the host page, so host CSS variables
+// and fonts are inherited. Every colour reads the host variable, with a
+// fallback for hosts that do not define it. Variables are HSL triplets.
 
-const MONO = "'JetBrains Mono', 'Fira Code', ui-monospace, monospace";
+const SANS = "Geist, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif";
+const MONO = "'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
+const SERIF = "'Source Serif 4', ui-serif, Georgia, serif";
 
-interface ThemeColors { bg: string; surface: string; border: string; text: string; muted: string; accent: string; ok: string; warn: string; bad: string }
+/** Corner radius derived from the host's --radius. */
+function radius(minusPx = 0): string {
+  return minusPx ? `calc(var(--radius, 0.625rem) - ${minusPx}px)` : 'var(--radius, 0.625rem)';
+}
+
+const FALLBACKS = {
+  light: {
+    background: '60 14% 99%', foreground: '60 3% 8%', card: '0 0% 100%',
+    primary: '15 58% 43%', muted: '60 3% 94%', accent: '48 12% 92%', 'muted-foreground': '50 3% 41%',
+    border: '60 2% 88%', input: '60 2% 87%', ring: '15 56% 52%', destructive: '4 59% 44%',
+  },
+  dark: {
+    background: '0 0% 8%', foreground: '45 12% 93%', card: '60 2% 12%',
+    primary: '15 65% 63%', muted: '0 0% 13%', accent: '0 1% 17%', 'muted-foreground': '45 4% 56%',
+    border: '30 2% 18%', input: '30 2% 21%', ring: '15 65% 63%', destructive: '10 72% 67%',
+  },
+} as const;
+
+type HostVar = keyof typeof FALLBACKS.light;
+
+interface ThemeColors { bg: string; surface: string; border: string; track: string; text: string; muted: string; accent: string; hover: string; ring: string; ok: string; warn: string; bad: string }
 
 function themeColors(dark: boolean): ThemeColors {
-  return dark
-    ? { bg: '#08080f', surface: '#0e0e1a', border: '#1a1a2c', text: '#e2e0f0', muted: '#52507a', accent: '#fbbf24', ok: '#10b981', warn: '#f59e0b', bad: '#f43f5e' }
-    : { bg: '#fafaf9', surface: '#ffffff', border: '#e8e6f0', text: '#0f0e1a', muted: '#9490b0', accent: '#d97706', ok: '#059669', warn: '#d97706', bad: '#e11d48' };
+  const fb = FALLBACKS[dark ? 'dark' : 'light'];
+  const v = (name: HostVar): string => `hsl(var(--${name}, ${fb[name]}))`;
+  return {
+    bg: v('background'),
+    surface: v('card'),
+    border: v('border'),
+    track: v('input'),
+    text: v('foreground'),
+    muted: v('muted-foreground'),
+    accent: v('primary'),
+    hover: v('accent'),
+    ring: v('ring'),
+    // The host has no success/warning tokens; these are tuned for >= 4.5:1
+    // on --card and --background in each mode.
+    ok: dark ? 'hsl(142 42% 58%)' : 'hsl(142 52% 30%)',
+    warn: dark ? 'hsl(38 82% 62%)' : 'hsl(32 92% 33%)',
+    bad: v('destructive'),
+  };
 }
 
 function sevColor(c: ThemeColors, severity: string, percent: number): string {
@@ -88,22 +128,22 @@ function esc(s: string): string {
 
 function card(c: ThemeColors, title: string, body: string): string {
   return `
-    <div style="background:${c.surface};border:1px solid ${c.border};border-radius:3px;padding:18px;margin-bottom:12px">
-      <div style="font-size:0.62rem;color:${c.muted};letter-spacing:0.12em;text-transform:uppercase;margin-bottom:14px">${title}</div>
+    <div style="background:${c.surface};border:1px solid ${c.border};border-radius:${radius()};padding:18px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:0.68rem;font-weight:500;color:${c.muted};letter-spacing:0.08em;text-transform:uppercase;margin-bottom:14px">${title}</div>
       ${body}
     </div>`;
 }
 
 function errorNote(c: ThemeColors, msg: string): string {
-  return `<div style="font-size:0.75rem;color:${c.warn};opacity:0.9">⚠ ${esc(msg)}</div>`;
+  return `<div style="font-size:0.8rem;color:${c.warn}">⚠ ${esc(msg)}</div>`;
 }
 
 function renderLive(c: ThemeColors, live: LiveData | null, error: string | null): string {
   const badge = live?.plan
-    ? `<span style="font-size:0.62rem;border:1px solid ${c.border};border-radius:3px;padding:2px 8px;color:${c.muted}">${esc(live.plan)}${live.tier ? ` · ${esc(live.tier.replace(/^default_claude_/, ''))}` : ''}</span>`
+    ? `<span style="font-family:${MONO};font-size:0.65rem;font-weight:400;letter-spacing:0;text-transform:none;border:1px solid ${c.border};border-radius:${radius(4)};padding:2px 8px;color:${c.muted}">${esc(live.plan)}${live.tier ? ` · ${esc(live.tier.replace(/^default_claude_/, ''))}` : ''}</span>`
     : '';
   const updated = live
-    ? `<span style="font-size:0.62rem;color:${c.muted};margin-left:8px">updated ${ago(Date.now() - live.fetchedAt)}</span>`
+    ? `<span style="font-family:${MONO};font-size:0.65rem;font-weight:400;letter-spacing:0;text-transform:none;color:${c.muted};margin-left:8px">updated ${ago(Date.now() - live.fetchedAt)}</span>`
     : '';
   let body: string;
   if (error) {
@@ -122,12 +162,12 @@ function renderLive(c: ThemeColors, live: LiveData | null, error: string | null)
       const pct = Math.max(0, Math.min(100, l.percent));
       return `
         <div style="margin-bottom:14px">
-          <div style="display:flex;justify-content:space-between;font-size:0.72rem;margin-bottom:5px">
+          <div style="display:flex;justify-content:space-between;gap:8px;font-size:0.8rem;margin-bottom:6px">
             <span>${esc(l.label)}</span>
-            <span style="color:${c.muted}">${l.percent}% · ${resetsIn(l.resetsAt)}</span>
+            <span style="font-family:${MONO};font-size:0.72rem;color:${c.muted}">${l.percent}% · ${resetsIn(l.resetsAt)}</span>
           </div>
-          <div style="height:6px;background:${c.border};border-radius:3px;overflow:hidden">
-            <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;transition:width 0.4s"></div>
+          <div style="height:6px;background:${c.track};border-radius:${radius(6)};overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${color};border-radius:${radius(6)};transition:width 0.4s"></div>
           </div>
         </div>`;
     }).join('');
@@ -141,11 +181,11 @@ function renderChart(c: ThemeColors, daily: HistoryData['daily']): string {
     const h = Math.round((totalOf(d.tokens) / max) * 100);
     const label = `${d.date}: ${fmtTokens(totalOf(d.tokens))} tokens · ${fmtCost(d.cost)}`;
     return `<div title="${label}" style="flex:1;display:flex;align-items:flex-end;height:90px">
-      <div style="width:100%;height:${Math.max(h, totalOf(d.tokens) > 0 ? 3 : 0)}%;background:${c.accent};opacity:${0.45 + 0.55 * (i / daily.length)};border-radius:1px"></div>
+      <div style="width:100%;height:${Math.max(h, totalOf(d.tokens) > 0 ? 3 : 0)}%;background:${c.accent};opacity:${0.45 + 0.55 * (i / daily.length)};border-radius:${radius(8)} ${radius(8)} 0 0"></div>
     </div>`;
   }).join('');
   return `<div style="display:flex;gap:2px;align-items:flex-end">${bars}</div>
-    <div style="display:flex;justify-content:space-between;font-size:0.62rem;color:${c.muted};margin-top:6px">
+    <div style="display:flex;justify-content:space-between;font-family:${MONO};font-size:0.65rem;color:${c.muted};margin-top:6px">
       <span>${daily[0]?.date ?? ''}</span><span>${daily[daily.length - 1]?.date ?? ''}</span>
     </div>`;
 }
@@ -153,10 +193,10 @@ function renderChart(c: ThemeColors, daily: HistoryData['daily']): string {
 function renderTable(c: ThemeColors, rows: [string, TokenCounts, number | null][]): string {
   if (rows.length === 0) return `<div style="font-size:0.75rem;color:${c.muted}">No data.</div>`;
   return rows.map(([name, tokens, cost]) => `
-    <div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid ${c.border};font-size:0.72rem">
+    <div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid ${c.border};font-size:0.78rem">
       <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;opacity:0.8" title="${esc(name)}">${esc(name)}</div>
-      <div style="flex-shrink:0;color:${c.muted}">${fmtTokens(totalOf(tokens))}</div>
-      <div style="flex-shrink:0;width:70px;text-align:right;color:${c.accent}">${fmtCost(cost)}</div>
+      <div style="flex-shrink:0;font-family:${MONO};font-size:0.72rem;color:${c.muted}">${fmtTokens(totalOf(tokens))}</div>
+      <div style="flex-shrink:0;width:70px;text-align:right;font-family:${MONO};font-size:0.72rem;color:${c.accent}">${fmtCost(cost)}</div>
     </div>`).join('');
 }
 
@@ -176,9 +216,9 @@ function renderHistory(c: ThemeColors, history: HistoryData | null, error: strin
   const statCards = `
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
       ${stats.map(([label, val]) => `
-        <div style="background:${c.surface};border:1px solid ${c.border};border-radius:3px;padding:14px">
-          <div style="font-size:1.35rem;font-weight:700;letter-spacing:-0.03em">${val}</div>
-          <div style="font-size:0.62rem;color:${c.muted};margin-top:4px;letter-spacing:0.1em;text-transform:uppercase">${label}</div>
+        <div style="background:${c.surface};border:1px solid ${c.border};border-radius:${radius()};padding:14px">
+          <div style="font-family:${MONO};font-size:1.35rem;font-weight:600;letter-spacing:-0.03em">${val}</div>
+          <div style="font-size:0.68rem;font-weight:500;color:${c.muted};margin-top:4px;letter-spacing:0.08em;text-transform:uppercase">${label}</div>
         </div>`).join('')}
     </div>`;
   return `
@@ -203,9 +243,19 @@ export function mount(container: HTMLElement, api: PluginAPI): void {
   const root = document.createElement('div');
   Object.assign(root.style, {
     height: '100%', overflowY: 'auto', boxSizing: 'border-box',
-    padding: '24px', fontFamily: MONO,
+    padding: '24px', fontFamily: SANS,
   });
   container.appendChild(root);
+
+  // Interaction states can't be expressed inline; colours come from --cu-*
+  // properties set on the element so they follow the host theme.
+  const style = document.createElement('style');
+  style.textContent = `
+    .cu-refresh { transition: background 0.15s, color 0.15s; }
+    .cu-refresh:hover { background: var(--cu-hover-bg) !important; color: var(--cu-hover-fg) !important; }
+    .cu-refresh:focus-visible { outline: 2px solid var(--cu-ring); outline-offset: 2px; }
+  `;
+  container.appendChild(style);
 
   const state: State = { live: null, liveError: null, history: null, historyError: null };
 
@@ -215,8 +265,8 @@ export function mount(container: HTMLElement, api: PluginAPI): void {
     root.style.color = c.text;
     root.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:20px">
-        <div style="font-size:1.3rem;font-weight:700;letter-spacing:-0.02em">Claude Usage<span style="color:${c.accent}">▌</span></div>
-        <button id="cu-refresh" style="padding:5px 12px;background:transparent;border:1px solid ${c.border};color:${c.muted};font-family:${MONO};font-size:0.7rem;border-radius:3px;cursor:pointer">↻ refresh</button>
+        <div style="font-family:${SERIF};font-size:1.5rem;font-weight:600;letter-spacing:-0.01em">Claude Usage<span style="color:${c.accent}">▌</span></div>
+        <button id="cu-refresh" class="cu-refresh" style="--cu-ring:${c.ring};--cu-hover-bg:${c.hover};--cu-hover-fg:${c.text};padding:5px 12px;background:transparent;border:1px solid ${c.border};color:${c.muted};font-family:${SANS};font-size:0.75rem;border-radius:${radius(4)};cursor:pointer">↻ refresh</button>
       </div>
       ${renderLive(c, state.live, state.liveError)}
       ${renderHistory(c, state.history, state.historyError)}
