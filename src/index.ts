@@ -55,7 +55,7 @@ const FALLBACKS = {
 
 type HostVar = keyof typeof FALLBACKS.light;
 
-interface ThemeColors { bg: string; surface: string; border: string; track: string; text: string; muted: string; accent: string; hover: string; ring: string; ok: string; warn: string; bad: string }
+interface ThemeColors { bg: string; surface: string; border: string; track: string; text: string; muted: string; accent: string; hover: string; highlight: string; ring: string; ok: string; warn: string; bad: string }
 
 function themeColors(dark: boolean): ThemeColors {
   const fb = FALLBACKS[dark ? 'dark' : 'light'];
@@ -69,6 +69,8 @@ function themeColors(dark: boolean): ThemeColors {
     muted: v('muted-foreground'),
     accent: v('primary'),
     hover: v('accent'),
+    // A faint wash of the muted text colour: --accent is too close to --card in dark mode to mark a column.
+    highlight: `hsl(var(--muted-foreground, ${fb['muted-foreground']}) / 0.16)`,
     ring: v('ring'),
     // The host has no success/warning tokens; these are tuned for >= 4.5:1
     // on --card and --background in each mode.
@@ -177,19 +179,26 @@ function renderLive(c: ThemeColors, live: LiveData | null, error: string | null)
   return card(c, `plan limits ${updated}`, body);
 }
 
-function renderChart(c: ThemeColors, daily: HistoryData['daily']): string {
+/** The line under the chart: the date range, or the active day's figures. */
+function chartReadout(c: ThemeColors, daily: HistoryData['daily'], active: number | null): string {
+  const d = active === null ? undefined : daily[active];
+  if (!d) return `<span>${daily[0]?.date ?? ''}</span><span>${daily[daily.length - 1]?.date ?? ''}</span>`;
+  return `<span style="color:${c.text}">${d.date}</span>
+    <span>${fmtTokens(totalOf(d.tokens))} tokens · <span style="color:${c.accent}">${fmtCost(d.cost)}</span></span>`;
+}
+
+function renderChart(c: ThemeColors, daily: HistoryData['daily'], active: number | null): string {
   const max = Math.max(1, ...daily.map((d) => totalOf(d.tokens)));
   const bars = daily.map((d, i) => {
     const h = Math.round((totalOf(d.tokens) / max) * 100);
     const label = `${d.date}: ${fmtTokens(totalOf(d.tokens))} tokens · ${fmtCost(d.cost)}`;
-    return `<div title="${label}" style="flex:1;display:flex;align-items:flex-end;height:90px">
+    return `<div class="cu-day" data-day="${i}"${i === active ? ' data-active' : ''} role="img" aria-label="${label}" style="flex:1;display:flex;align-items:flex-end;height:90px;border-radius:${radius(8)} ${radius(8)} 0 0">
       <div style="width:100%;height:${Math.max(h, totalOf(d.tokens) > 0 ? 3 : 0)}%;background:${c.accent};opacity:${0.45 + 0.55 * (i / daily.length)};border-radius:${radius(8)} ${radius(8)} 0 0"></div>
     </div>`;
   }).join('');
-  return `<div style="display:flex;gap:2px;align-items:flex-end">${bars}</div>
-    <div style="display:flex;justify-content:space-between;font-family:${MONO};font-size:0.65rem;color:${c.muted};margin-top:6px">
-      <span>${daily[0]?.date ?? ''}</span><span>${daily[daily.length - 1]?.date ?? ''}</span>
-    </div>`;
+  return `<div id="cu-chart" tabindex="0" role="group" aria-label="Daily tokens. Arrow keys step through the days."
+      style="--cu-day-active:${c.highlight};--cu-ring:${c.ring};display:flex;gap:2px;align-items:flex-end;touch-action:pan-y;user-select:none;-webkit-user-select:none;border-radius:${radius(8)}">${bars}</div>
+    <div id="cu-readout" aria-live="polite" style="display:flex;justify-content:space-between;gap:8px;font-family:${MONO};font-size:0.65rem;color:${c.muted};margin-top:6px">${chartReadout(c, daily, active)}</div>`;
 }
 
 function renderTable(c: ThemeColors, rows: [string, TokenCounts, number | null][]): string {
@@ -202,7 +211,7 @@ function renderTable(c: ThemeColors, rows: [string, TokenCounts, number | null][
     </div>`).join('');
 }
 
-function renderHistory(c: ThemeColors, history: HistoryData | null, error: string | null): string {
+function renderHistory(c: ThemeColors, history: HistoryData | null, error: string | null, activeDay: number | null): string {
   if (error) return card(c, 'usage history (30 days)', errorNote(c, error));
   if (!history) return card(c, 'usage history (30 days)', `<div style="font-size:0.75rem;color:${c.muted}">Loading…</div>`);
   if (history.totals.messages === 0) {
@@ -225,7 +234,7 @@ function renderHistory(c: ThemeColors, history: HistoryData | null, error: strin
     </div>`;
   return `
     ${statCards}
-    ${card(c, 'daily tokens (30 days)', renderChart(c, history.daily))}
+    ${card(c, 'daily tokens (30 days)', renderChart(c, history.daily, activeDay))}
     <div class="cu-split">
       ${card(c, 'by model', renderTable(c, history.byModel.map((m) => [m.model, m.tokens, m.cost])))}
       ${card(c, 'by project', renderTable(c, history.byProject.slice(0, 10).map((p) => [p.project, p.tokens, p.cost])))}
@@ -233,13 +242,6 @@ function renderHistory(c: ThemeColors, history: HistoryData | null, error: strin
 }
 
 // ── Mount / Unmount ─────────────────────────────────────────────────────
-
-interface State {
-  live: LiveData | null;
-  liveError: string | null;
-  history: HistoryData | null;
-  historyError: string | null;
-}
 
 // Lucide-style glyphs drawn like the host's built-in tab headers.
 const GAUGE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20a8 8 0 1 1 8-8"/><path d="M12 12l4-4"/><path d="M12 20v.01"/><path d="M20 12h.01"/><path d="M4 12h.01"/><path d="M6.3 6.3l.01.01"/></svg>';
@@ -259,6 +261,10 @@ const STYLES = `
   .cu-refresh { transition: background 0.15s, color 0.15s; }
   .cu-refresh:disabled { opacity: 0.5; cursor: default; }
   .cu-refresh:focus-visible { outline: 1px solid var(--cu-ring); outline-offset: 0; }
+  .cu-day[data-active] { background: var(--cu-day-active); }
+  .cu-day[data-active] > div { opacity: 1 !important; }
+  #cu-chart:focus { outline: none; }
+  #cu-chart:focus-visible { outline: 1px solid var(--cu-ring); outline-offset: 4px; }
   .cu-spin { animation: cu-spin 1s linear infinite; }
   @keyframes cu-spin { to { transform: rotate(360deg); } }
   @media (hover: hover) {
@@ -281,6 +287,8 @@ interface State {
   history: HistoryData | null;
   historyError: string | null;
   loading: boolean;
+  /** Chart day under the pointer, tapped or picked with the keyboard. */
+  activeDay: number | null;
 }
 
 export function mount(container: HTMLElement, api: PluginAPI): void {
@@ -307,7 +315,7 @@ export function mount(container: HTMLElement, api: PluginAPI): void {
   style.textContent = STYLES;
   container.appendChild(style);
 
-  const state: State = { live: null, liveError: null, history: null, historyError: null, loading: false };
+  const state: State = { live: null, liveError: null, history: null, historyError: null, loading: false, activeDay: null };
 
   function render(ctx: PluginContext): void {
     const c = themeColors(ctx.theme === 'dark');
@@ -330,7 +338,7 @@ export function mount(container: HTMLElement, api: PluginAPI): void {
     `;
     body.innerHTML = `
       ${renderLive(c, state.live, state.liveError)}
-      ${renderHistory(c, state.history, state.historyError)}
+      ${renderHistory(c, state.history, state.historyError, state.activeDay)}
     `;
     header.querySelector('#cu-refresh')?.addEventListener('click', () => void load(true));
   }
@@ -371,6 +379,74 @@ export function mount(container: HTMLElement, api: PluginAPI): void {
   render(api.context);
   void load(true);
 
+  // Chart readout. The browser's title tooltips never show on touch screens,
+  // so a day is picked by hovering with a mouse, tapping or dragging a finger
+  // along the bars, or the arrow keys once the chart has focus.
+  let dragging = false;
+
+  function setActiveDay(i: number | null): void {
+    if (i === state.activeDay) return;
+    state.activeDay = i;
+    const chart = body.querySelector('#cu-chart');
+    const readout = body.querySelector('#cu-readout');
+    if (!chart || !readout || !state.history) return;
+    chart.querySelectorAll<HTMLElement>('[data-day]').forEach((el) => {
+      el.toggleAttribute('data-active', Number(el.dataset.day) === i);
+    });
+    readout.innerHTML = chartReadout(themeColors(api.context.theme === 'dark'), state.history.daily, i);
+  }
+
+  const inChart = (t: EventTarget | null): boolean => t instanceof Element && t.closest('#cu-chart') !== null;
+
+  // A touch's events keep targeting the element it started on, so look up
+  // what is under the finger now. Gaps between bars leave the day unchanged.
+  function pickDayAt(e: PointerEvent): void {
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-day]');
+    if (el && body.contains(el)) setActiveDay(Number(el.dataset.day));
+  }
+
+  const endDrag = (): void => { dragging = false; };
+
+  body.addEventListener('pointerdown', (e) => {
+    if (!inChart(e.target)) {
+      setActiveDay(null);
+      return;
+    }
+    dragging = true;
+    pickDayAt(e);
+  });
+  body.addEventListener('pointermove', (e) => {
+    if (dragging) {
+      pickDayAt(e);
+    } else if (e.pointerType === 'mouse') {
+      if (inChart(e.target)) pickDayAt(e);
+      else setActiveDay(null);
+    }
+  });
+  body.addEventListener('pointerleave', (e) => {
+    if (e.pointerType === 'mouse' && !dragging) setActiveDay(null);
+  });
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+  body.addEventListener('keydown', (e) => {
+    if (!inChart(e.target) || !state.history) return;
+    const last = state.history.daily.length - 1;
+    const cur = state.activeDay;
+    let next: number | null;
+    if (e.key === 'ArrowLeft') next = cur === null ? last : Math.max(0, cur - 1);
+    else if (e.key === 'ArrowRight') next = cur === null ? last : Math.min(last, cur + 1);
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = last;
+    else if (e.key === 'Escape') next = null;
+    else return;
+    e.preventDefault();
+    setActiveDay(next);
+  });
+  body.addEventListener('focusout', (e) => {
+    // Ignore the chart being replaced by a re-render.
+    if (!dragging && e.target instanceof Element && e.target.isConnected && inChart(e.target)) setActiveDay(null);
+  });
+
   // Live gauges re-fetch every 5 minutes; countdown / "updated" text re-renders
   // every minute without touching the network.
   const poll = window.setInterval(() => void load(false), LIVE_POLL_MS);
@@ -380,6 +456,8 @@ export function mount(container: HTMLElement, api: PluginAPI): void {
   (container as any)._cuCleanup = () => {
     window.clearInterval(poll);
     window.clearInterval(tick);
+    window.removeEventListener('pointerup', endDrag);
+    window.removeEventListener('pointercancel', endDrag);
     unsubscribe();
   };
 }
