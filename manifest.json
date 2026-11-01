@@ -1,7 +1,7 @@
 {
   "name": "claude-usage",
   "displayName": "Claude Usage",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Live Claude Code plan-limit gauges and 30-day token/cost history.",
   "author": "HandyS11",
   "icon": "icon.svg",
