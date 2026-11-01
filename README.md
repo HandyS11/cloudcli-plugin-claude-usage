@@ -23,7 +23,8 @@ Shows the current usage of Claude Code in a CloudCLI tab:
 
 - **Live plan limits** — session (5h window), weekly, and per-model utilization
   gauges with severity coloring and reset countdowns, straight from the same
-  endpoint that powers Claude Code's `/usage` screen. Auto-refreshes every 60s.
+  endpoint that powers Claude Code's `/usage` screen. Auto-refreshes every
+  5 minutes (the endpoint is strictly rate-limited, see below).
 - **30-day history** — daily token bar chart, totals (tokens / estimated cost /
   sessions), and per-model / per-project breakdowns, parsed locally from
   `~/.claude/projects/**/*.jsonl` transcripts.
@@ -45,7 +46,7 @@ The backend subprocess (`dist/server.js`) exposes two endpoints via the host's
 RPC proxy:
 
 - `GET /live` — reads the OAuth token from `~/.claude/.credentials.json` and
-  calls `https://api.anthropic.com/api/oauth/usage` (cached 30s). It never
+  calls `https://api.anthropic.com/api/oauth/usage` (cached 5 minutes). It never
   writes to the credentials file and never uses the refresh token; if the token
   is expired it asks you to run `claude` to refresh it.
 - `GET /history?days=30` — parses local session transcripts (deduped by message
@@ -57,6 +58,20 @@ vice-versa.
 
 > **Note:** the usage endpoint is unofficial and may change; the live section
 > degrades gracefully if it does.
+
+### Rate limiting
+
+The usage endpoint allows only a handful of requests per window, and that
+budget is shared with Claude Code's own `/usage` screen and statusline (see
+[anthropics/claude-code#30930](https://github.com/anthropics/claude-code/issues/30930)).
+To stay well under it, the plugin:
+
+- calls the endpoint at most once every 5 minutes, no matter how many tabs are
+  open or how often you click refresh (concurrent requests share one call);
+- on HTTP 429 honors `Retry-After` when present, otherwise backs off
+  5 → 10 → 20 → 40 → 60 minutes between attempts;
+- keeps showing the last good reading (marked as stale, with the reason) while
+  it waits, instead of blanking the gauges.
 
 ## Development
 
