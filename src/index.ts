@@ -9,13 +9,23 @@ import type { PluginAPI, PluginContext } from './types.js';
 
 interface TokenCounts { input: number; output: number; cacheCreate: number; cacheRead: number }
 interface LiveLimit { kind: string; label: string; percent: number; severity: string; resetsAt: string | null; model: string | null }
-interface LiveData { plan: string | null; tier: string | null; limits: LiveLimit[] }
+interface LiveData {
+  plan: string | null; tier: string | null; limits: LiveLimit[];
+  fetchedAt: number; stale: boolean; error: string | null; retryAt: number | null;
+}
+
 interface HistoryData {
   daily: { date: string; tokens: TokenCounts; cost: number }[];
   byModel: { model: string; tokens: TokenCounts; cost: number | null }[];
   byProject: { project: string; tokens: TokenCounts; cost: number | null }[];
   totals: { tokens: TokenCounts; cost: number; sessions: number; messages: number };
 }
+
+// The usage endpoint rate-limits after a handful of calls and the limit is shared
+// with Claude Code's own /usage screen, so poll it rarely. The server caches for
+// the same interval and backs off on 429, so the refresh button is safe too.
+const LIVE_POLL_MS = 5 * 60_000;
+const TICK_MS = 60_000;
 
 // ── Theme (matches starter conventions) ─────────────────────────────────
 
@@ -63,6 +73,13 @@ function resetsIn(iso: string | null): string {
   return h > 0 ? `resets in ${h}h ${m}m` : `resets in ${m}m`;
 }
 
+function ago(ms: number): string {
+  const m = Math.floor(ms / 60_000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ${m % 60}m ago`;
+}
+
 function esc(s: string): string {
   return s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] as string));
 }
@@ -85,13 +102,22 @@ function renderLive(c: ThemeColors, live: LiveData | null, error: string | null)
   const badge = live?.plan
     ? `<span style="font-size:0.62rem;border:1px solid ${c.border};border-radius:3px;padding:2px 8px;color:${c.muted}">${esc(live.plan)}${live.tier ? ` · ${esc(live.tier.replace(/^default_claude_/, ''))}` : ''}</span>`
     : '';
+  const updated = live
+    ? `<span style="font-size:0.62rem;color:${c.muted};margin-left:8px">updated ${ago(Date.now() - live.fetchedAt)}</span>`
+    : '';
   let body: string;
   if (error) {
     body = errorNote(c, error);
   } else if (!live || live.limits.length === 0) {
     body = `<div style="font-size:0.75rem;color:${c.muted}">No limit data available.</div>`;
   } else {
-    body = live.limits.map((l) => {
+    if (live.stale && live.error) {
+      body = errorNote(c, `${live.error} Showing last reading from ${ago(Date.now() - live.fetchedAt)}.`)
+        + `<div style="height:10px"></div>`;
+    } else {
+      body = '';
+    }
+    body += live.limits.map((l) => {
       const color = sevColor(c, l.severity, l.percent);
       const pct = Math.max(0, Math.min(100, l.percent));
       return `
@@ -106,7 +132,7 @@ function renderLive(c: ThemeColors, live: LiveData | null, error: string | null)
         </div>`;
     }).join('');
   }
-  return card(c, `plan limits ${badge}`, body);
+  return card(c, `plan limits ${badge}${updated}`, body);
 }
 
 function renderChart(c: ThemeColors, daily: HistoryData['daily']): string {
@@ -227,12 +253,15 @@ export function mount(container: HTMLElement, api: PluginAPI): void {
   render(api.context);
   void load(true);
 
-  // Live gauges poll every 60s while mounted; countdown text refreshes with them.
-  const timer = window.setInterval(() => void load(false), 60_000);
+  // Live gauges re-fetch every 5 minutes; countdown / "updated" text re-renders
+  // every minute without touching the network.
+  const poll = window.setInterval(() => void load(false), LIVE_POLL_MS);
+  const tick = window.setInterval(() => render(api.context), TICK_MS);
   const unsubscribe = api.onContextChange((ctx) => render(ctx));
 
   (container as any)._cuCleanup = () => {
-    window.clearInterval(timer);
+    window.clearInterval(poll);
+    window.clearInterval(tick);
     unsubscribe();
   };
 }

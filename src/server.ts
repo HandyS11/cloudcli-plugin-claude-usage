@@ -2,20 +2,16 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { parseCredentials, normalizeUsage, LiveData } from './live.js';
+import { parseCredentials, LiveCache, LiveResult, Credentials } from './live.js';
 import { parseTranscriptLine, projectLabel, aggregate, SessionEntries, UsageEntry } from './history.js';
 
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
-const LIVE_CACHE_MS = 30_000;
 
 // ── /live ──────────────────────────────────────────────────────────────
 
-let liveCache: { at: number; data: LiveData } | null = null;
-
-async function getLive(): Promise<LiveData> {
-  if (liveCache && Date.now() - liveCache.at < LIVE_CACHE_MS) return liveCache.data;
-
+/** Local, no-network checks — never throttled, so a fresh login shows up immediately. */
+function readCredentials(): Credentials {
   let credsJson: unknown;
   try {
     credsJson = JSON.parse(fs.readFileSync(path.join(CLAUDE_DIR, '.credentials.json'), 'utf-8'));
@@ -27,7 +23,14 @@ async function getLive(): Promise<LiveData> {
   if (creds.expired) {
     throw Object.assign(new Error('OAuth token expired — run claude to refresh it, then retry.'), { status: 401 });
   }
+  return creds;
+}
 
+// The endpoint is shared with Claude Code's own /usage screen and rate-limits
+// after only a few calls, so LiveCache polls it at most every 5 minutes and
+// backs off on 429 (see live.ts).
+const liveCache = new LiveCache(async () => {
+  const creds = readCredentials();
   const res = await fetch(USAGE_URL, {
     headers: {
       Authorization: `Bearer ${creds.accessToken}`,
@@ -36,12 +39,18 @@ async function getLive(): Promise<LiveData> {
     },
     signal: AbortSignal.timeout(10_000),
   });
-  if (!res.ok) {
-    throw Object.assign(new Error(`Usage endpoint returned HTTP ${res.status}.`), { status: 502 });
-  }
-  const data = normalizeUsage(await res.json(), creds.plan, creds.tier);
-  liveCache = { at: Date.now(), data };
-  return data;
+  return {
+    status: res.status,
+    retryAfter: res.headers.get('retry-after'),
+    body: res.ok ? await res.json() : null,
+    plan: creds.plan,
+    tier: creds.tier,
+  };
+});
+
+async function getLive(): Promise<LiveResult> {
+  readCredentials();
+  return liveCache.get();
 }
 
 // ── /history ───────────────────────────────────────────────────────────
