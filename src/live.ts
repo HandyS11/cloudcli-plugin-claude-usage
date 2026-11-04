@@ -70,6 +70,8 @@ export function normalizeUsage(raw: unknown, plan: string | null, tier: string |
 
 /** How long a successful reading is served without re-fetching. */
 export const LIVE_CACHE_MS = 5 * 60_000;
+/** How soon a timeout, network error or 5xx is retried: these say nothing about our quota. */
+export const TRANSIENT_RETRY_MS = 30_000;
 const BACKOFF_BASE_MS = 5 * 60_000;
 const BACKOFF_CAP_MS = 60 * 60_000;
 
@@ -143,6 +145,7 @@ export class LiveCache {
     try {
       res = await this.fetchUsage();
     } catch (err: any) {
+      this.nextAllowedAt = now + TRANSIENT_RETRY_MS;
       this.failure = { message: err?.message ?? 'Usage fetch failed.', status: typeof err?.status === 'number' ? err.status : 502, retryAt: null };
       return;
     }
@@ -158,6 +161,7 @@ export class LiveCache {
       return;
     }
     if (res.status < 200 || res.status >= 300) {
+      if (res.status >= 500) this.nextAllowedAt = now + TRANSIENT_RETRY_MS;
       this.failure = { message: `Usage endpoint returned HTTP ${res.status}.`, status: 502, retryAt: null };
       return;
     }

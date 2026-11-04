@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LiveCache, LIVE_CACHE_MS, parseRetryAfter, backoffMs, UsageResponse } from './live.js';
+import { LiveCache, LIVE_CACHE_MS, TRANSIENT_RETRY_MS, parseRetryAfter, backoffMs, UsageResponse } from './live.js';
 
 const BODY = { limits: [{ kind: 'session', percent: 10, severity: 'normal', resets_at: null }] };
 
@@ -114,17 +114,46 @@ test('429 without cached data throws a 429 with the wait in the message', async 
   await assert.rejects(h.cache.get(), (err: any) => err.status === 429 && /5 min/.test(err.message));
 });
 
-test('a thrown fetch error keeps stale data and retries at the normal interval', async () => {
+test('a thrown fetch error keeps stale data and retries soon', async () => {
   const h = harness([ok, new Error('boom'), ok]);
   await h.cache.get();
   h.advance(LIVE_CACHE_MS);
   const r = await h.cache.get();
   assert.equal(r.stale, true);
   assert.equal(r.error, 'boom');
-  h.advance(LIVE_CACHE_MS);
+  h.advance(TRANSIENT_RETRY_MS);
   const fresh = await h.cache.get();
   assert.equal(fresh.stale, false);
   assert.equal(h.calls(), 3);
+});
+
+test('a timeout on the very first fetch recovers without waiting a full interval', async () => {
+  const h = harness([new Error('The operation was aborted due to timeout'), ok]);
+  await assert.rejects(h.cache.get(), (err: any) => err.status === 502 && /timeout/.test(err.message));
+  h.advance(TRANSIENT_RETRY_MS - 1);
+  await assert.rejects(h.cache.get(), /timeout/);
+  assert.equal(h.calls(), 1);
+  h.advance(1);
+  assert.equal((await h.cache.get()).error, null);
+  assert.equal(h.calls(), 2);
+});
+
+test('a 5xx is retried soon, a 4xx waits the normal interval', async () => {
+  const failing = (status: number): UsageResponse => ({ ...ok, status });
+  const server = harness([failing(503), ok]);
+  await assert.rejects(server.cache.get(), /503/);
+  server.advance(TRANSIENT_RETRY_MS);
+  await server.cache.get();
+  assert.equal(server.calls(), 2);
+
+  const client = harness([failing(403), ok]);
+  await assert.rejects(client.cache.get(), /403/);
+  client.advance(LIVE_CACHE_MS - 1);
+  await assert.rejects(client.cache.get(), /403/);
+  assert.equal(client.calls(), 1);
+  client.advance(1);
+  await client.cache.get();
+  assert.equal(client.calls(), 2);
 });
 
 test('parseRetryAfter reads seconds and HTTP dates, ignores junk', () => {
@@ -137,12 +166,12 @@ test('parseRetryAfter reads seconds and HTTP dates, ignores junk', () => {
   assert.equal(parseRetryAfter('Fri, 30 Oct 2026 07:00:00 GMT', now), null);
 });
 
-test('after a non-429 error, calls before the next interval do not re-fetch', async () => {
+test('after a thrown error, calls before the retry time do not re-fetch', async () => {
   const h = harness([ok, new Error('boom')]);
   await h.cache.get();
   h.advance(LIVE_CACHE_MS);
   await h.cache.get();
-  h.advance(LIVE_CACHE_MS - 1);
+  h.advance(TRANSIENT_RETRY_MS - 1);
   await h.cache.get();
   assert.equal(h.calls(), 2);
 });

@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { parseCredentials, LiveCache, LiveResult, Credentials } from './live.js';
-import { parseTranscriptLine, projectLabel, aggregate, SessionEntries, UsageEntry } from './history.js';
+import { aggregate } from './history.js';
+import { loadSessions } from './transcripts.js';
 
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
@@ -55,49 +56,8 @@ async function getLive(): Promise<LiveResult> {
 
 // ── /history ───────────────────────────────────────────────────────────
 
-// Per-file parse cache keyed by mtime, so repeated polls only re-read changed files.
-const fileCache = new Map<string, { mtimeMs: number; entries: UsageEntry[] }>();
-
-function readSessionFile(file: string): UsageEntry[] {
-  const mtimeMs = fs.statSync(file).mtimeMs;
-  const cached = fileCache.get(file);
-  if (cached && cached.mtimeMs === mtimeMs) return cached.entries;
-  const entries: UsageEntry[] = [];
-  for (const line of fs.readFileSync(file, 'utf-8').split('\n')) {
-    const e = parseTranscriptLine(line);
-    if (e) entries.push(e);
-  }
-  fileCache.set(file, { mtimeMs, entries });
-  return entries;
-}
-
-function getHistory(days: number) {
-  const projectsDir = path.join(CLAUDE_DIR, 'projects');
-  const sessions: SessionEntries[] = [];
-  let dirs: fs.Dirent[] = [];
-  try {
-    dirs = fs.readdirSync(projectsDir, { withFileTypes: true });
-  } catch {
-    // no transcripts at all — aggregate over nothing, frontend shows empty state
-  }
-  for (const dir of dirs) {
-    if (!dir.isDirectory()) continue;
-    const project = projectLabel(dir.name);
-    let files: string[] = [];
-    try {
-      files = fs.readdirSync(path.join(projectsDir, dir.name)).filter((f) => f.endsWith('.jsonl'));
-    } catch {
-      continue;
-    }
-    for (const f of files) {
-      try {
-        sessions.push({ project, entries: readSessionFile(path.join(projectsDir, dir.name, f)) });
-      } catch {
-        /* unreadable file — skip */
-      }
-    }
-  }
-  return aggregate(sessions, days, Date.now());
+async function getHistory(days: number) {
+  return aggregate(await loadSessions(path.join(CLAUDE_DIR, 'projects')), days, Date.now());
 }
 
 // ── HTTP wiring ────────────────────────────────────────────────────────
@@ -112,7 +72,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/history') {
       const days = Math.min(Math.max(Number(url.searchParams.get('days')) || 30, 1), 365);
-      res.end(JSON.stringify(getHistory(days)));
+      res.end(JSON.stringify(await getHistory(days)));
       return;
     }
     res.writeHead(404);
