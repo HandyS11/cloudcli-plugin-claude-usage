@@ -10,7 +10,7 @@ import type { PluginAPI, PluginContext } from './types.js';
 interface TokenCounts { input: number; output: number; cacheCreate: number; cacheRead: number }
 interface LiveLimit { kind: string; label: string; percent: number; severity: string; resetsAt: string | null; model: string | null }
 interface LiveData {
-  plan: string | null; tier: string | null; limits: LiveLimit[];
+  plan: string | null; tier: string | null; planName: string | null; limits: LiveLimit[];
   fetchedAt: number; stale: boolean; error: string | null; retryAt: number | null;
 }
 
@@ -139,10 +139,23 @@ function errorNote(c: ThemeColors, msg: string): string {
   return `<div style="font-size:0.8rem;color:${c.warn}">⚠ ${esc(msg)}</div>`;
 }
 
+/** Badge text: the plan's display name ("Ultra") when known, else the raw codes ("max · max_20x"). */
+export function planLabel(
+  live: Pick<LiveData, 'plan' | 'tier' | 'planName'> | null,
+): { text: string; title: string | null } | null {
+  if (!live) return null;
+  const codes = live.plan
+    ? live.plan + (live.tier ? ` · ${live.tier.replace(/^default_claude_/, '')}` : '')
+    : null;
+  if (live.planName) return { text: live.planName, title: codes };
+  return codes ? { text: codes, title: null } : null;
+}
+
 function planBadge(c: ThemeColors, live: LiveData | null): string {
-  if (!live?.plan) return '';
-  const tier = live.tier ? ` · ${esc(live.tier.replace(/^default_claude_/, ''))}` : '';
-  return `<span style="flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:600;line-height:1.4;border:1px solid ${c.border};border-radius:${radius(2)};padding:1px 8px;color:${c.muted}">${esc(live.plan)}${tier}</span>`;
+  const label = planLabel(live);
+  if (!label) return '';
+  const title = label.title ? ` title="${esc(label.title)}"` : '';
+  return `<span${title} style="flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:600;line-height:1.4;border:1px solid ${c.border};border-radius:${radius(2)};padding:1px 8px;color:${c.muted}">${esc(label.text)}</span>`;
 }
 
 function renderLive(c: ThemeColors, live: LiveData | null, error: string | null): string {
