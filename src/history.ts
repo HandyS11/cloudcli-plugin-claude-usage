@@ -51,7 +51,7 @@ export function parseTranscriptLine(line: string): UsageEntry | null {
 
 /** "-home-user-projects-Foo" -> "Foo"; falls back to the trimmed dir name. */
 export function projectLabel(dirName: string): string {
-  const m = dirName.match(/-projects-(.+)$/);
+  const m = /-projects-(.+)$/.exec(dirName);
   return m ? m[1] : dirName.replace(/^-/, '');
 }
 
@@ -70,6 +70,16 @@ function totalOf(t: TokenCounts): number {
   return t.input + t.output + t.cacheCreate + t.cacheRead;
 }
 
+interface Bucket { tokens: TokenCounts; cost: number | null }
+
+/** Add one message to a model or project bucket. Its cost stays null until a priced model contributes. */
+function addToBucket(map: Map<string, Bucket>, key: string, tokens: TokenCounts, cost: number | null): void {
+  const b = map.get(key) ?? { tokens: zero(), cost: null };
+  add(b.tokens, tokens);
+  if (cost !== null) b.cost = (b.cost ?? 0) + cost;
+  map.set(key, b);
+}
+
 export function aggregate(sessions: SessionEntries[], days: number, nowMs: number): HistoryAggregate {
   const DAY_MS = 86_400_000;
   const todayStartMs = Math.floor(nowMs / DAY_MS) * DAY_MS; // UTC day start
@@ -77,8 +87,8 @@ export function aggregate(sessions: SessionEntries[], days: number, nowMs: numbe
   const windowEndMs = todayStartMs + DAY_MS; // exclusive
   const seen = new Set<string>();
   const byDay = new Map<string, { tokens: TokenCounts; cost: number }>();
-  const byModel = new Map<string, { tokens: TokenCounts; cost: number | null }>();
-  const byProject = new Map<string, { tokens: TokenCounts; cost: number | null }>();
+  const byModel = new Map<string, Bucket>();
+  const byProject = new Map<string, Bucket>();
   const totals = { tokens: zero(), cost: 0, sessions: 0, messages: 0 };
 
   for (const session of sessions) {
@@ -101,17 +111,8 @@ export function aggregate(sessions: SessionEntries[], days: number, nowMs: numbe
       d.cost += cost ?? 0;
       byDay.set(day, d);
 
-      for (const [map, key] of [
-        [byModel, e.model],
-        [byProject, session.project],
-      ] as const) {
-        const b = map.get(key) ?? { tokens: zero(), cost: null };
-        add(b.tokens, e.tokens);
-        if (cost !== null) {
-          b.cost = (b.cost ?? 0) + cost;
-        }
-        map.set(key, b);
-      }
+      addToBucket(byModel, e.model, e.tokens, cost);
+      addToBucket(byProject, session.project, e.tokens, cost);
     }
     if (sessionActive) totals.sessions += 1;
   }
@@ -124,7 +125,7 @@ export function aggregate(sessions: SessionEntries[], days: number, nowMs: numbe
     daily.push({ date, tokens: d?.tokens ?? zero(), cost: d?.cost ?? 0 });
   }
 
-  const rank = (m: Map<string, { tokens: TokenCounts; cost: number | null }>) =>
+  const rank = (m: Map<string, Bucket>) =>
     [...m.entries()]
       .sort((a, b) => totalOf(b[1].tokens) - totalOf(a[1].tokens))
       .map(([key, v]) => ({ key, tokens: v.tokens, cost: v.cost }));

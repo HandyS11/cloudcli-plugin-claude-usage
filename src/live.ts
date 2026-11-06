@@ -38,26 +38,28 @@ const KIND_LABELS: Record<string, string> = {
   weekly_scoped: 'Weekly',
 };
 
+/** One entry of the endpoint's `limits` array; null when it lacks a kind or a percent. */
+function toLimit(l: any): LiveLimit | null {
+  if (typeof l?.kind !== 'string' || typeof l?.percent !== 'number') return null;
+  const rawModel = l.scope?.model?.display_name;
+  const model: string | null = typeof rawModel === 'string' && rawModel !== '' ? rawModel : null;
+  const base = KIND_LABELS[l.kind] ?? l.kind;
+  return {
+    kind: l.kind,
+    label: model ? `${base} — ${model}` : base,
+    percent: l.percent,
+    severity: typeof l.severity === 'string' ? l.severity : 'normal',
+    resetsAt: typeof l.resets_at === 'string' ? l.resets_at : null,
+    model,
+  };
+}
+
 /** Defensive mapping of the (unofficial) usage endpoint response. */
 export function normalizeUsage(raw: unknown, plan: string | null, tier: string | null): LiveData {
-  const limits: LiveLimit[] = [];
   const rawLimits = (raw as any)?.limits;
-  if (Array.isArray(rawLimits)) {
-    for (const l of rawLimits) {
-      if (typeof l?.kind !== 'string' || typeof l?.percent !== 'number') continue;
-      const rawModel = l.scope?.model?.display_name;
-      const model: string | null = typeof rawModel === 'string' && rawModel !== '' ? rawModel : null;
-      const base = KIND_LABELS[l.kind] ?? l.kind;
-      limits.push({
-        kind: l.kind,
-        label: model ? `${base} — ${model}` : base,
-        percent: l.percent,
-        severity: typeof l.severity === 'string' ? l.severity : 'normal',
-        resetsAt: typeof l.resets_at === 'string' ? l.resets_at : null,
-        model,
-      });
-    }
-  }
+  const limits = Array.isArray(rawLimits)
+    ? rawLimits.map(toLimit).filter((l): l is LiveLimit => l !== null)
+    : [];
   return { plan, tier, limits };
 }
 

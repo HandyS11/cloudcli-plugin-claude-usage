@@ -34,7 +34,7 @@ async function scanProjects(projectsDir: string): Promise<SessionEntries[]> {
   for (const dir of dirs) {
     if (!dir.isDirectory()) continue;
     const project = projectLabel(dir.name);
-    let files: string[] = [];
+    let files: string[];
     try {
       files = (await fs.promises.readdir(path.join(projectsDir, dir.name))).filter((f) => f.endsWith('.jsonl'));
     } catch {
