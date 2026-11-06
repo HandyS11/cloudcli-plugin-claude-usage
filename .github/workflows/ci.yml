@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege for GITHUB_TOKEN: the job only checks out code and runs tests.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
