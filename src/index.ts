@@ -144,9 +144,10 @@ export function planLabel(
   live: Pick<LiveData, 'plan' | 'tier' | 'planName'> | null,
 ): { text: string; title: string | null } | null {
   if (!live) return null;
-  const codes = live.plan
-    ? live.plan + (live.tier ? ` · ${live.tier.replace(/^default_claude_/, '')}` : '')
-    : null;
+  let codes: string | null = null;
+  if (live.plan) {
+    codes = live.tier ? `${live.plan} · ${live.tier.replace(/^default_claude_/, '')}` : live.plan;
+  }
   if (live.planName) return { text: live.planName, title: codes };
   return codes ? { text: codes, title: null } : null;
 }

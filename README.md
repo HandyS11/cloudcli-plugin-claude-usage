@@ -81,6 +81,7 @@ To stay well under it, the plugin:
 ```bash
 npm install
 npm test        # tsc + node --test dist/
+npm run lint    # ESLint + typescript-eslint + sonarjs rules
 npm run dev     # tsc --watch
 ```
 
