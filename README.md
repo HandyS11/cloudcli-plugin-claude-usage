@@ -48,7 +48,10 @@ RPC proxy:
 - `GET /live` — reads the OAuth token from `~/.claude/.credentials.json` and
   calls `https://api.anthropic.com/api/oauth/usage` (cached 5 minutes). It never
   writes to the credentials file and never uses the refresh token; if the token
-  is expired it asks you to run `claude` to refresh it.
+  is expired it asks you to run `claude` to refresh it. The plan badge shows the
+  plan's display name (e.g. "Ultra") from `https://api.anthropic.com/api/oauth/profile`
+  (cached 1 hour per token), since the credentials file only holds internal codes
+  like `max` / `max_20x`; those codes are the fallback and the badge's hover text.
 - `GET /history?days=30` — parses local session transcripts (deduped by message
   id, cached by file mtime) and aggregates tokens and estimated cost by day,
   model, and project. Costs use a bundled price table; unknown models show "—".

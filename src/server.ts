@@ -3,11 +3,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { parseCredentials, LiveCache, LiveResult, Credentials } from './live.js';
+import { PlanNameCache } from './profile.js';
 import { aggregate } from './history.js';
 import { loadSessions } from './transcripts.js';
 
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
+const PROFILE_URL = 'https://api.anthropic.com/api/oauth/profile';
+
+function oauthHeaders(accessToken: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    'anthropic-beta': 'oauth-2025-04-20',
+    'Content-Type': 'application/json',
+  };
+}
 
 // ── /live ──────────────────────────────────────────────────────────────
 
@@ -33,11 +43,7 @@ function readCredentials(): Credentials {
 const liveCache = new LiveCache(async () => {
   const creds = readCredentials();
   const res = await fetch(USAGE_URL, {
-    headers: {
-      Authorization: `Bearer ${creds.accessToken}`,
-      'anthropic-beta': 'oauth-2025-04-20',
-      'Content-Type': 'application/json',
-    },
+    headers: oauthHeaders(creds.accessToken),
     signal: AbortSignal.timeout(10_000),
   });
   return {
@@ -49,9 +55,20 @@ const liveCache = new LiveCache(async () => {
   };
 });
 
-async function getLive(): Promise<LiveResult> {
-  readCredentials();
-  return liveCache.get();
+// The plan's display name ("Ultra") is not in the credentials file; see profile.ts.
+const planNames = new PlanNameCache(async (accessToken) => {
+  const res = await fetch(PROFILE_URL, {
+    headers: oauthHeaders(accessToken),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`Profile endpoint returned HTTP ${res.status}.`);
+  return res.json();
+});
+
+async function getLive(): Promise<LiveResult & { planName: string | null }> {
+  const creds = readCredentials();
+  const [live, planName] = await Promise.all([liveCache.get(), planNames.get(creds.accessToken)]);
+  return { ...live, planName };
 }
 
 // ── /history ───────────────────────────────────────────────────────────
