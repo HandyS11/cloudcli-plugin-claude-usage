@@ -16,5 +16,8 @@
     "eslint-plugin-sonarjs": "^4.2.2",
     "typescript": "^5.5.0",
     "typescript-eslint": "^8.72.1"
+  },
+  "overrides": {
+    "minimatch": "^11.0.1"
   }
 }
